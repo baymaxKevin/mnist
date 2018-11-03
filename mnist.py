@@ -13,15 +13,12 @@
 # limitations under the License.
 # ==============================================================================
 
-"""Builds the MNIST network.
-Implements the inference/loss/training pattern for model building.
-1. inference() - Builds the model as far as is required for running the network
-forward to make predictions.
-2. loss() - Adds to the inference model the layers required to generate loss.
-3. training() - Adds to the loss model the Ops required to generate and
-apply gradients.
-This file is used by the various "fully_connected_*.py" files and not meant to
-be run.
+"""
+构建图表(build the Graph)
+经过三阶段的模式函数操作：inference()， loss()，和training()
+1.inference() —— 尽可能地构建好图表，满足促使神经网络向前反馈并做出预测的要求
+2.loss() —— 往inference图表中添加生成损失(loss)所需要的操作(ops)
+3.training() —— 往损失图表中添加计算并应用梯度(gradients)所需的操作
 """
 from __future__ import absolute_import
 from __future__ import division
@@ -32,23 +29,29 @@ import math
 import tensorflow.python.platform
 import tensorflow as tf
 
-# The MNIST dataset has 10 classes, representing the digits 0 through 9.
+# MNIST数据集有10个分类，代表0-9个数字
 NUM_CLASSES = 10
 
-# The MNIST images are always 28x28 pixels.
+# MNIST图像集像素为28*28
 IMAGE_SIZE = 28
 IMAGE_PIXELS = IMAGE_SIZE * IMAGE_SIZE
 
-
+"""inference()函数会尽可能地构建图表，做到返回包含了预测结果(output prediction)的Tensor
+Args:
+  images: 输入与占位符（Inputs and Placeholders)
+  hidden1_units: 第一个隐含层
+  hidden2_units: 第二个隐含层
+Returns:
+  softmax_linear: 输出结果的logits Tensor
+API备注：
+  tf.truncated_normal() 根据所得到的均值和标准差，生成一个随机分布，初始化权重
+  tf.nn.relu() 0/1阶跃函数
+  tf.matmul() 矩阵相乘
+  tf.Variable() 生成初始值变量，必须指定初始值
+  tf.name_scope() 与tf.Variable()组合使用，更加方便管理参数命名
+"""
 def inference(images, hidden1_units, hidden2_units):
-  """Build the MNIST model up to where it may be used for inference.
-  Args:
-    images: Images placeholder, from inputs().
-    hidden1_units: Size of the first hidden layer.
-    hidden2_units: Size of the second hidden layer.
-  Returns:
-    softmax_linear: Output tensor with the computed logits.
-  """
+
   # Hidden 1
   with tf.name_scope('hidden1'):
     weights = tf.Variable(
@@ -78,19 +81,22 @@ def inference(images, hidden1_units, hidden2_units):
     logits = tf.matmul(hidden2, weights) + biases
   return logits
 
-
-def loss(logits, labels):
-  """Calculates the loss from the logits and the labels.
+"""计算预测lost
   Args:
-    logits: Logits tensor, float - [batch_size, NUM_CLASSES].
-    labels: Labels tensor, int32 - [batch_size].
+    logits: Logits张量, float - [batch_size, NUM_CLASSES].
+    labels: 标签张量, int32 - [batch_size].
   Returns:
-    loss: Loss tensor of type float.
+    loss: 损失
+  API备注:
+    tf.expand_dims() 维度增加一维
+    tf.sparse_to_dense() 将稀疏表示形式转换为稠密张量,转化为1-hot张量
+    tf.stack() 矩阵拼接函数,在新的张量阶上拼接，产生的张量的阶数将会增加
+    tf.concat() 将两个张量在某一个维度(axis)合并起来,产生的张量的阶数不会发生变化
+    tf.nn.softmax_cross_entropy_with_logits_v2() softmax的输出向量和样本的实际标签的交叉熵的对应向量
+                                                用来比较inference()函数与1-hot标签所输出的logits Tensor
   """
-  # Convert from sparse integer labels in the range [0, NUM_CLASSES)
-  # to 1-hot dense float vectors (that is we will have batch_size vectors,
-  # each with NUM_CLASSES values, all of which are 0.0 except there will
-  # be a 1.0 in the entry corresponding to the label).
+def loss(logits, labels):
+
   batch_size = tf.size(labels)
   labels = tf.expand_dims(labels, 1)
   indices = tf.expand_dims(tf.range(0, batch_size), 1)
@@ -103,19 +109,23 @@ def loss(logits, labels):
   loss = tf.reduce_mean(cross_entropy, name='xentropy_mean')
   return loss
 
-
-def training(loss, learning_rate):
-  """Sets up the training Ops.
-  Creates a summarizer to track the loss over time in TensorBoard.
-  Creates an optimizer and applies the gradients to all trainable variables.
-  The Op returned by this function is what must be passed to the
-  `sess.run()` call to cause the model to train.
+"""
+training
+  training()函数添加了通过梯度下降(gradient descent)将损失最小化所需的操作
+  创建优化器并应用梯度下降法迭代寻优
+  操作函数放在会话sess运行
   Args:
-    loss: Loss tensor, from loss().
-    learning_rate: The learning rate to use for gradient descent.
+    loss: 损失张量
+    learning_rate: 学习速率
   Returns:
-    train_op: The Op for training.
-  """
+    train_op: 训练操作
+    API备注：
+    tf.summary.scalar() 对标量数据汇总和记录
+    tf.train.GradientDescentOptimizer() 按照要求的学习率(固定值)应用梯度下降法
+    optimizer.minimize() 使用minimize函数更新系统中的三角权重、增加全局步骤
+"""
+def training(loss, learning_rate):
+
   # Add a scalar summary for the snapshot loss.
   tf.summary.scalar(loss.op.name, loss)
   # Create the gradient descent optimizer with the given learning rate.
@@ -128,6 +138,18 @@ def training(loss, learning_rate):
   return train_op
 
 
+"""
+评估
+  预测标签并给出评估效果
+  Args:
+    logits: Logits张量
+    labels: 预测标签
+  Returns:
+    正确预测标签张量
+  API备注：
+  tf.nn.in_top_k() 用于计算预测的结果和实际结果的是否相等,返回一个bool类型的张量
+  tf.reduce_sum() 压缩求和，用于降维
+"""
 def evaluation(logits, labels):
   """Evaluate the quality of the logits at predicting the label.
   Args:
